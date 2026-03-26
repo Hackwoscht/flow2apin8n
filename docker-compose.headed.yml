@@ -12,7 +12,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./tmp:/app/tmp
-      - ./config/setting.toml:/app/config/setting.toml
     environment:
       - PYTHONUNBUFFERED=1
       - ALLOW_DOCKER_HEADED_CAPTCHA=true
