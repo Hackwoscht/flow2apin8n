@@ -2220,10 +2220,23 @@ class FlowClient:
                 return None, None
         # APICaptcha-Dienst
         elif captcha_method in ["yescaptcha", "capmonster", "ezcaptcha", "capsolver"]:
-            # Pre-generate a consistent UA so that the captcha service and the
+            # Pre-generate a consistent Chrome UA so that the captcha service and the
             # subsequent Google API request use the exact same User-Agent string.
-            pre_ua = self._generate_user_agent(f"api_captcha_{project_id}")
-            self._set_request_fingerprint({"user_agent": pre_ua})
+            # IMPORTANT: Must be a Chrome UA because curl_cffi uses impersonate="chrome110"
+            # which sets a Chrome TLS fingerprint. A Firefox/Safari UA with Chrome TLS = detection.
+            import hashlib as _hl
+            _seed = int(_hl.md5(f"api_captcha_{project_id}".encode()).hexdigest()[:8], 16)
+            _rng = random.Random(_seed)
+            _chrome_vers = ["128.0.0.0", "129.0.0.0", "130.0.0.0", "131.0.0.0", "132.0.0.0"]
+            _cv = _rng.choice(_chrome_vers)
+            _major = _cv.split(".")[0]
+            pre_ua = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{_cv} Safari/537.36"
+            self._set_request_fingerprint({
+                "user_agent": pre_ua,
+                "sec_ch_ua": f'"Chromium";v="{_major}", "Google Chrome";v="{_major}", "Not-A.Brand";v="99"',
+                "sec_ch_ua_mobile": "?0",
+                "sec_ch_ua_platform": '"Windows"',
+            })
             token = await self._get_api_captcha_token(captcha_method, project_id, action, user_agent=pre_ua)
             return token, None
         else:
@@ -2283,6 +2296,8 @@ class FlowClient:
                     "clientKey": client_key,
                     "task": task_payload
                 }
+
+                debug_logger.log_info(f"[reCAPTCHA {method}] createTask with userAgent={user_agent[:80] if user_agent else 'None'}")
 
                 result = await session.post(create_url, json=create_data, impersonate="chrome110")
                 result_json = result.json()
