@@ -2220,15 +2220,18 @@ class FlowClient:
                 return None, None
         # APICaptcha-Dienst
         elif captcha_method in ["yescaptcha", "capmonster", "ezcaptcha", "capsolver"]:
-            self._set_request_fingerprint(None)
-            token = await self._get_api_captcha_token(captcha_method, project_id, action)
+            # Pre-generate a consistent UA so that the captcha service and the
+            # subsequent Google API request use the exact same User-Agent string.
+            pre_ua = self._generate_user_agent(f"api_captcha_{project_id}")
+            self._set_request_fingerprint({"user_agent": pre_ua})
+            token = await self._get_api_captcha_token(captcha_method, project_id, action, user_agent=pre_ua)
             return token, None
         else:
             debug_logger.log_info(f"[reCAPTCHA] nichtWissenCaptcha-Methode: {captcha_method}")
             self._set_request_fingerprint(None)
             return None, None
 
-    async def _get_api_captcha_token(self, method: str, project_id: str, action: str = "IMAGE_GENERATION") -> Optional[str]:
+    async def _get_api_captcha_token(self, method: str, project_id: str, action: str = "IMAGE_GENERATION", user_agent: Optional[str] = None) -> Optional[str]:
         """DurchverwendenAPICaptcha-Dienst
         
         Args:
@@ -2268,14 +2271,17 @@ class FlowClient:
         try:
             async with AsyncSession() as session:
                 create_url = f"{base_url}/createTask"
+                task_payload = {
+                    "websiteURL": website_url,
+                    "websiteKey": website_key,
+                    "type": task_type,
+                    "pageAction": page_action
+                }
+                if user_agent:
+                    task_payload["userAgent"] = user_agent
                 create_data = {
                     "clientKey": client_key,
-                    "task": {
-                        "websiteURL": website_url,
-                        "websiteKey": website_key,
-                        "type": task_type,
-                        "pageAction": page_action
-                    }
+                    "task": task_payload
                 }
 
                 result = await session.post(create_url, json=create_data, impersonate="chrome110")
