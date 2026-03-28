@@ -2252,6 +2252,15 @@ class FlowClient:
             project_id: ProjektID
             action: reCAPTCHA actionTyp (IMAGE_GENERATION Oder VIDEO_GENERATION)
         """
+        # Resolve proxy: if a request proxy is configured, pass it to the captcha
+        # service so the token is solved from the same IP as the API request.
+        proxy_url = None
+        if self.proxy_manager:
+            try:
+                proxy_url = await self.proxy_manager.get_request_proxy_url()
+            except Exception:
+                proxy_url = None
+
         # AbrufenKonfiguration
         if method == "yescaptcha":
             client_key = config.yescaptcha_api_key
@@ -2268,7 +2277,11 @@ class FlowClient:
         elif method == "capsolver":
             client_key = config.capsolver_api_key
             base_url = config.capsolver_base_url
-            task_type = "ReCaptchaV3EnterpriseTaskProxyLess"
+            # Use proxy task type when a proxy is available, ProxyLess otherwise
+            if proxy_url:
+                task_type = "ReCaptchaV3EnterpriseTask"
+            else:
+                task_type = "ReCaptchaV3EnterpriseTaskProxyLess"
         else:
             debug_logger.log_error(f"[reCAPTCHA] Unknown API method: {method}")
             return None
@@ -2292,6 +2305,19 @@ class FlowClient:
                 }
                 if user_agent:
                     task_payload["userAgent"] = user_agent
+                # Pass proxy to captcha service so it solves from the same IP as the API request
+                if proxy_url and method == "capsolver":
+                    import re as _re
+                    _m = _re.match(r'^(?:https?://)?(?:([^:]+):([^@]+)@)?([^:]+):(\d+)$', proxy_url)
+                    if _m:
+                        _user, _pass, _host, _port = _m.groups()
+                        task_payload["proxyType"] = "http"
+                        task_payload["proxyAddress"] = _host
+                        task_payload["proxyPort"] = int(_port)
+                        if _user and _pass:
+                            task_payload["proxyLogin"] = _user
+                            task_payload["proxyPassword"] = _pass
+                        debug_logger.log_info(f"[reCAPTCHA {method}] using proxy task: {_host}:{_port}")
                 create_data = {
                     "clientKey": client_key,
                     "task": task_payload
